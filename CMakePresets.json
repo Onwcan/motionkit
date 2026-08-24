@@ -1,6 +1,10 @@
 {
   "version": 6,
-  "cmakeMinimumRequired": { "major": 3, "minor": 24, "patch": 0 },
+  "cmakeMinimumRequired": {
+    "major": 3,
+    "minor": 24,
+    "patch": 0
+  },
   "configurePresets": [
     {
       "name": "base",
@@ -16,15 +20,16 @@
       "name": "debug",
       "inherits": "base",
       "displayName": "Debug",
-      "cacheVariables": { "CMAKE_BUILD_TYPE": "Debug" }
+      "cacheVariables": {
+        "CMAKE_BUILD_TYPE": "Debug"
+      }
     },
     {
       "name": "release",
       "inherits": "base",
-      "displayName": "Release with benchmarks",
+      "displayName": "Release",
       "cacheVariables": {
-        "CMAKE_BUILD_TYPE": "Release",
-        "MOTIONKIT_BUILD_BENCHMARKS": "ON"
+        "CMAKE_BUILD_TYPE": "Release"
       }
     },
     {
@@ -51,26 +56,64 @@
       "name": "tidy",
       "inherits": "debug",
       "displayName": "Debug with clang-tidy",
-      "cacheVariables": { "CMAKE_CXX_CLANG_TIDY": "clang-tidy;--warnings-as-errors=*" }
+      "cacheVariables": {
+        "CMAKE_CXX_CLANG_TIDY": "clang-tidy;--warnings-as-errors=*"
+      }
     }
   ],
   "buildPresets": [
-    { "name": "debug",   "configurePreset": "debug" },
-    { "name": "release", "configurePreset": "release" },
-    { "name": "asan",    "configurePreset": "asan" },
-    { "name": "tsan",    "configurePreset": "tsan" },
-    { "name": "tidy",    "configurePreset": "tidy" }
+    {
+      "name": "debug",
+      "configurePreset": "debug"
+    },
+    {
+      "name": "release",
+      "configurePreset": "release"
+    },
+    {
+      "name": "asan",
+      "configurePreset": "asan"
+    },
+    {
+      "name": "tsan",
+      "configurePreset": "tsan"
+    },
+    {
+      "name": "tidy",
+      "configurePreset": "tidy"
+    }
   ],
   "testPresets": [
     {
       "name": "default",
       "hidden": true,
-      "output": { "outputOnFailure": true },
-      "execution": { "noTestsAction": "error", "stopOnFailure": false }
+      "output": {
+        "outputOnFailure": true
+      },
+      "execution": {
+        "noTestsAction": "error",
+        "stopOnFailure": false
+      }
     },
-    { "name": "debug",   "inherits": "default", "configurePreset": "debug" },
-    { "name": "release", "inherits": "default", "configurePreset": "release" },
-    { "name": "asan",    "inherits": "default", "configurePreset": "asan" },
-    { "name": "tsan",    "inherits": "default", "configurePreset": "tsan" }
+    {
+      "name": "debug",
+      "inherits": "default",
+      "configurePreset": "debug"
+    },
+    {
+      "name": "release",
+      "inherits": "default",
+      "configurePreset": "release"
+    },
+    {
+      "name": "asan",
+      "inherits": "default",
+      "configurePreset": "asan"
+    },
+    {
+      "name": "tsan",
+      "inherits": "default",
+      "configurePreset": "tsan"
+    }
   ]
 }

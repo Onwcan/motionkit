@@ -244,8 +244,8 @@ TEST(SO3, ChainOfManyProductsDoesNotDrift) {
   for (int i = 0; i < 100000; ++i) {
     acc = acc * step;
   }
-  const Scalar n2 = acc.w() * acc.w() + acc.x() * acc.x() + acc.y() * acc.y() +
-                    acc.z() * acc.z();
+  const Scalar n2 =
+      acc.w() * acc.w() + acc.x() * acc.x() + acc.y() * acc.y() + acc.z() * acc.z();
   EXPECT_NEAR(n2, 1.0, 1e-12);
   EXPECT_TRUE(acc.matrix().isRotation(1e-11));
 }

@@ -121,10 +121,8 @@ SO3 SO3::fromRPY(Scalar roll, Scalar pitch, Scalar yaw) {
   const Scalar sp = std::sin(0.5 * pitch);
   const Scalar cy = std::cos(0.5 * yaw);
   const Scalar sy = std::sin(0.5 * yaw);
-  return fromQuaternion(cr * cp * cy + sr * sp * sy,
-                        sr * cp * cy - cr * sp * sy,
-                        cr * sp * cy + sr * cp * sy,
-                        cr * cp * sy - sr * sp * cy);
+  return fromQuaternion(cr * cp * cy + sr * sp * sy, sr * cp * cy - cr * sp * sy,
+                        cr * sp * cy + sr * cp * sy, cr * cp * sy - sr * sp * cy);
 }
 
 SO3 SO3::rotX(Scalar angle) { return fromAxisAngle(Vec3::unitX(), angle); }
@@ -252,8 +250,8 @@ SO3 SO3::slerp(const SO3& other, Scalar t) const noexcept {
     k0 = std::sin((1.0 - t) * theta) * inv_sin;
     k1 = std::sin(t * theta) * inv_sin;
   }
-  return fromQuaternion(k0 * w_ + k1 * ow, k0 * x_ + k1 * ox,
-                        k0 * y_ + k1 * oy, k0 * z_ + k1 * oz);
+  return fromQuaternion(k0 * w_ + k1 * ow, k0 * x_ + k1 * ox, k0 * y_ + k1 * oy,
+                        k0 * z_ + k1 * oz);
 }
 
 Scalar SO3::angleTo(const SO3& other) const noexcept {

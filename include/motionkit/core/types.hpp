@@ -36,17 +36,38 @@ struct Vec3 {
   static constexpr Vec3 unitY() noexcept { return {0.0, 1.0, 0.0}; }
   static constexpr Vec3 unitZ() noexcept { return {0.0, 0.0, 1.0}; }
 
-  constexpr Vec3 operator+(const Vec3& o) const noexcept { return {x + o.x, y + o.y, z + o.z}; }
-  constexpr Vec3 operator-(const Vec3& o) const noexcept { return {x - o.x, y - o.y, z - o.z}; }
+  constexpr Vec3 operator+(const Vec3& o) const noexcept {
+    return {x + o.x, y + o.y, z + o.z};
+  }
+  constexpr Vec3 operator-(const Vec3& o) const noexcept {
+    return {x - o.x, y - o.y, z - o.z};
+  }
   constexpr Vec3 operator-() const noexcept { return {-x, -y, -z}; }
   constexpr Vec3 operator*(Scalar s) const noexcept { return {x * s, y * s, z * s}; }
   constexpr Vec3 operator/(Scalar s) const { return {x / s, y / s, z / s}; }
 
-  constexpr Vec3& operator+=(const Vec3& o) noexcept { x += o.x; y += o.y; z += o.z; return *this; }
-  constexpr Vec3& operator-=(const Vec3& o) noexcept { x -= o.x; y -= o.y; z -= o.z; return *this; }
-  constexpr Vec3& operator*=(Scalar s) noexcept { x *= s; y *= s; z *= s; return *this; }
+  constexpr Vec3& operator+=(const Vec3& o) noexcept {
+    x += o.x;
+    y += o.y;
+    z += o.z;
+    return *this;
+  }
+  constexpr Vec3& operator-=(const Vec3& o) noexcept {
+    x -= o.x;
+    y -= o.y;
+    z -= o.z;
+    return *this;
+  }
+  constexpr Vec3& operator*=(Scalar s) noexcept {
+    x *= s;
+    y *= s;
+    z *= s;
+    return *this;
+  }
 
-  constexpr Scalar dot(const Vec3& o) const noexcept { return x * o.x + y * o.y + z * o.z; }
+  constexpr Scalar dot(const Vec3& o) const noexcept {
+    return x * o.x + y * o.y + z * o.z;
+  }
   constexpr Vec3 cross(const Vec3& o) const noexcept {
     return {y * o.z - z * o.y, z * o.x - x * o.z, x * o.y - y * o.x};
   }
@@ -64,7 +85,8 @@ struct Vec3 {
   }
 
   constexpr Scalar operator[](std::size_t i) const {
-    return i == 0 ? x : (i == 1 ? y : (i == 2 ? z : throw std::out_of_range("Vec3 index")));
+    return i == 0 ? x
+                  : (i == 1 ? y : (i == 2 ? z : throw std::out_of_range("Vec3 index")));
   }
 
   constexpr bool isApprox(const Vec3& o, Scalar tol) const noexcept {
@@ -92,7 +114,8 @@ struct Mat3 {
 
   /// Column-wise construction -- the natural form for a rotation matrix built
   /// from the images of the basis vectors.
-  static constexpr Mat3 fromColumns(const Vec3& c0, const Vec3& c1, const Vec3& c2) noexcept {
+  static constexpr Mat3 fromColumns(const Vec3& c0, const Vec3& c1,
+                                    const Vec3& c2) noexcept {
     Mat3 m;
     m.d = {c0.x, c1.x, c2.x, c0.y, c1.y, c2.y, c0.z, c1.z, c2.z};
     return m;
@@ -133,8 +156,7 @@ struct Mat3 {
   }
 
   constexpr Vec3 operator*(const Vec3& v) const noexcept {
-    return {d[0] * v.x + d[1] * v.y + d[2] * v.z,
-            d[3] * v.x + d[4] * v.y + d[5] * v.z,
+    return {d[0] * v.x + d[1] * v.y + d[2] * v.z, d[3] * v.x + d[4] * v.y + d[5] * v.z,
             d[6] * v.x + d[7] * v.y + d[8] * v.z};
   }
 

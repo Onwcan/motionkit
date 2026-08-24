@@ -87,18 +87,23 @@ jobs:
         run: sudo apt-get update && sudo apt-get install -y ninja-build clang-18 clang-tidy-18 clang-format-18
 
       - name: Check formatting
-        run: |
-          find include src tests benchmarks -name '*.hpp' -o -name '*.cpp' \
-            | xargs clang-format-18 --dry-run --Werror
-
+        # Runs the same script a developer runs, so the two cannot drift.
+        # The previous inline find/xargs searched a directory that was empty
+        # -- and therefore untracked, and absent on a fresh checkout -- so it
+        # failed even when every file was correctly formatted.
+        run: bash scripts/format.sh --check
       - name: clang-tidy
         env:
           CC: clang-18
           CXX: clang++-18
         run: |
           cmake -S . -B build -DCMAKE_BUILD_TYPE=Debug -DCMAKE_EXPORT_COMPILE_COMMANDS=ON
-          # Analyse only first-party sources; the fetched GoogleTest tree is not ours to fix.
-          find include src -name '*.hpp' -o -name '*.cpp' \
+          # Only .cpp files under src/. A header has no entry in the compilation
+          # database, so passing one to clang-tidy makes it fall back to a default
+          # command and emit spurious diagnostics. Headers are still analysed
+          # through the translation units that include them, via HeaderFilterRegex
+          # in .clang-tidy. The fetched GoogleTest tree is excluded by construction.
+          find src -name '*.cpp' \
             | xargs clang-tidy-18 -p build --warnings-as-errors='*'
 
   install-consumer:

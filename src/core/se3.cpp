@@ -18,13 +18,12 @@ Vec3 SE3::operator*(const Vec3& point) const noexcept { return (r_ * point) + t_
 
 std::array<Scalar, 16> SE3::matrix() const noexcept {
   const Mat3 r = r_.matrix();
-  return {r(0, 0), r(0, 1), r(0, 2), t_.x,
-          r(1, 0), r(1, 1), r(1, 2), t_.y,
-          r(2, 0), r(2, 1), r(2, 2), t_.z,
-          0.0,     0.0,     0.0,     1.0};
+  return {r(0, 0), r(0, 1), r(0, 2), t_.x, r(1, 0), r(1, 1), r(1, 2), t_.y,
+          r(2, 0), r(2, 1), r(2, 2), t_.z, 0.0,     0.0,     0.0,     1.0};
 }
 
-bool SE3::isApprox(const SE3& other, Scalar linear_tol, Scalar angular_tol) const noexcept {
+bool SE3::isApprox(const SE3& other, Scalar linear_tol,
+                   Scalar angular_tol) const noexcept {
   return t_.isApprox(other.t_, linear_tol) && r_.isApprox(other.r_, angular_tol);
 }
 

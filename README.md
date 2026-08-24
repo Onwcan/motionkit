@@ -40,7 +40,16 @@ cmake --build --preset debug
 ctest --preset debug
 ```
 
-Other presets: `release` (with benchmarks), `asan`, `tsan`, `tidy`.
+Other presets: `release`, `asan`, `tsan`, `tidy`.
+
+Before pushing, run the formatter -- CI enforces it:
+
+```bash
+scripts/format.sh
+```
+
+It pins clang-format 18; a different major version formats differently and CI
+will reject the result.
 
 ## Use it downstream
 
