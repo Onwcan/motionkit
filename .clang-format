@@ -1,0 +1,18 @@
+---
+BasedOnStyle: Google
+Standard: c++20
+ColumnLimit: 90
+DerivePointerAlignment: false
+PointerAlignment: Left
+IncludeBlocks: Regroup
+IncludeCategories:
+  - Regex: '^<gtest/'
+    Priority: 1
+  - Regex: '^<.*\.h>'
+    Priority: 2
+  - Regex: '^<.*>'
+    Priority: 3
+  - Regex: '^"motionkit/'
+    Priority: 4
+  - Regex: '.*'
+    Priority: 5

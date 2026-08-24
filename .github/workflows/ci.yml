@@ -1,0 +1,146 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  CMAKE_GENERATOR: Ninja
+
+jobs:
+  # A matrix rather than a single job: -Wconversion and -Wold-style-cast fire on
+  # different constructs under GCC and Clang, and Release exercises optimiser
+  # assumptions that Debug never reaches. Both compilers, both configurations.
+  build-and-test:
+    name: ${{ matrix.compiler }} / ${{ matrix.build_type }}
+    runs-on: ubuntu-24.04
+    strategy:
+      fail-fast: false
+      matrix:
+        compiler: [gcc, clang]
+        build_type: [Debug, Release]
+        include:
+          - compiler: gcc
+            cc: gcc-14
+            cxx: g++-14
+          - compiler: clang
+            cc: clang-18
+            cxx: clang++-18
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install toolchain
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y ninja-build ${{ matrix.compiler == 'clang' && 'clang-18' || 'g++-14' }}
+
+      - name: Configure
+        env:
+          CC: ${{ matrix.cc }}
+          CXX: ${{ matrix.cxx }}
+        run: cmake -S . -B build -DCMAKE_BUILD_TYPE=${{ matrix.build_type }}
+
+      - name: Build
+        run: cmake --build build -j "$(nproc)"
+
+      - name: Test
+        run: ctest --test-dir build --output-on-failure -j "$(nproc)"
+
+  sanitizers:
+    name: ${{ matrix.preset }}
+    runs-on: ubuntu-24.04
+    strategy:
+      fail-fast: false
+      matrix:
+        preset: [asan, tsan]
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install toolchain
+        run: sudo apt-get update && sudo apt-get install -y ninja-build clang-18
+      - name: Configure
+        env:
+          CC: clang-18
+          CXX: clang++-18
+        # -fno-sanitize-recover=all is set in the preset: a UBSan finding must
+        # fail the build, not print a note and carry on.
+        run: cmake --preset ${{ matrix.preset }}
+      - name: Build
+        run: cmake --build --preset ${{ matrix.preset }} -j "$(nproc)"
+      - name: Test
+        env:
+          ASAN_OPTIONS: detect_leaks=1:strict_string_checks=1:detect_stack_use_after_return=1
+          UBSAN_OPTIONS: print_stacktrace=1
+        run: ctest --preset ${{ matrix.preset }}
+
+  static-analysis:
+    name: clang-tidy + clang-format
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install toolchain
+        run: sudo apt-get update && sudo apt-get install -y ninja-build clang-18 clang-tidy-18 clang-format-18
+
+      - name: Check formatting
+        run: |
+          find include src tests benchmarks -name '*.hpp' -o -name '*.cpp' \
+            | xargs clang-format-18 --dry-run --Werror
+
+      - name: clang-tidy
+        env:
+          CC: clang-18
+          CXX: clang++-18
+        run: |
+          cmake -S . -B build -DCMAKE_BUILD_TYPE=Debug -DCMAKE_EXPORT_COMPILE_COMMANDS=ON
+          # Analyse only first-party sources; the fetched GoogleTest tree is not ours to fix.
+          find include src -name '*.hpp' -o -name '*.cpp' \
+            | xargs clang-tidy-18 -p build --warnings-as-errors='*'
+
+  install-consumer:
+    name: installed package is consumable
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install toolchain
+        run: sudo apt-get update && sudo apt-get install -y ninja-build
+
+      # Exporting targets is easy to get subtly wrong in a way no unit test
+      # catches: the library builds, and then find_package() fails for whoever
+      # depends on it. This job installs the package and compiles a fresh
+      # consumer against it, so that breakage shows up here instead of
+      # downstream.
+      - name: Build and install
+        run: |
+          cmake -S . -B build -DCMAKE_BUILD_TYPE=Release -DCMAKE_INSTALL_PREFIX="$PWD/staged"
+          cmake --build build -j "$(nproc)"
+          cmake --install build
+
+      - name: Compile a downstream consumer against the installed package
+        run: |
+          mkdir -p /tmp/consumer
+          cat > /tmp/consumer/CMakeLists.txt <<'EOT'
+          cmake_minimum_required(VERSION 3.24)
+          project(consumer LANGUAGES CXX)
+          find_package(motionkit REQUIRED)
+          add_executable(consumer main.cpp)
+          target_link_libraries(consumer PRIVATE motionkit::core)
+          EOT
+          cat > /tmp/consumer/main.cpp <<'EOT'
+          #include <cassert>
+          #include "motionkit/core/se3.hpp"
+          int main() {
+            using namespace motionkit;
+            const SE3 pose(SO3::rotZ(1.0), Vec3{1.0, 2.0, 3.0});
+            assert((pose.inverse() * pose).isApprox(SE3{}, 1e-12, 1e-12));
+            return 0;
+          }
+          EOT
+          cmake -S /tmp/consumer -B /tmp/consumer/build \
+                -DCMAKE_PREFIX_PATH="$PWD/staged" -DCMAKE_BUILD_TYPE=Release
+          cmake --build /tmp/consumer/build
+          /tmp/consumer/build/consumer
