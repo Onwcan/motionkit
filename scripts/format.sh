@@ -21,7 +21,7 @@ REQUIRED_MAJOR=18
 # Directories that may contain first-party sources. Missing ones are skipped
 # rather than treated as an error: not every repository has every directory,
 # and an empty directory does not survive a git checkout.
-CANDIDATE_DIRS="include src tests benchmarks examples"
+CANDIDATE_DIRS="include src tests benchmarks examples fuzz"
 
 repo_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "$repo_root"
