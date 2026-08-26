@@ -17,14 +17,14 @@ Eigen, no KDL, no Pinocchio — the algorithms are the point.
 | Work package | Scope | State |
 |---|---|---|
 | WP-01 | Build system, CI, static analysis, install/export | **Done** |
-| WP-02 | SE(3) transforms, frame graph, tool modeling | **In progress** — SO(3)/SE(3) done, frame graph next |
+| WP-02 | SE(3) transforms, frame graph, tool modeling | **Done** |
 | WP-03 | Forward and inverse kinematics (6R) | Planned |
 | WP-04 | Rigid-body dynamics (RNEA, CRBA) | Planned |
 | WP-05 | Trajectory planning (S-curve, TOPP, blending) | Planned |
 | WP-06 | Hand-eye, TCP and base-frame calibration | Planned |
 | WP-12 | CUDA batch IK and collision checking | Planned |
 
-54 tests, all passing, under GCC and Clang in Debug and Release, plus ASan,
+77 tests, all passing, under GCC and Clang in Debug and Release, plus ASan,
 UBSan and TSan.
 
 ---
@@ -71,11 +71,32 @@ const SE3 base_T_tcp = base_T_flange * flange_T_tcp;
 const Vec3 tcp_in_base = base_T_tcp * Vec3{0.0, 0.0, 0.0};
 ```
 
+Or let the frame graph compose the chain, so the relationship between any two
+frames is a query rather than a hand-written product:
+
+```cpp
+#include "motionkit/core/frame_graph.hpp"
+
+FrameGraph frames;
+const FrameId base    = frames.declareRoot("base").value;
+const FrameId flange  = frames.declareFrame("flange", base, base_T_flange).value;
+const FrameId tcp     = frames.declareFrame("tcp", flange, flange_T_tcp).value;
+const FrameId camera  = frames.declareFrame("camera", flange, flange_T_camera).value;
+
+// A joint moves: update one edge, everything below it follows.
+frames.setTransform(flange, base_T_flange_now);
+
+// Where is the tool, as the camera sees it? Two edges, not six.
+if (const auto camera_T_tcp = frames.lookup(camera, tcp)) {
+  const Vec3 target = camera_T_tcp.value * Vec3{};
+}
+```
+
 ---
 
 ## Design decisions worth arguing about
 
-Full reasoning lives in [`docs/adr/`](docs/adr/). Three that shaped the code:
+Full reasoning lives in [`docs/adr/`](docs/adr/). Five that shaped the code:
 
 **Rotations are stored as canonical unit quaternions, not matrices.**
 Composing a six-link chain costs 16 multiplies per joint instead of 27, and
@@ -93,6 +114,34 @@ two quaternions agreeing to **1.2e-15** componentwise reported **5.2e-8 rad**
 apart under the `acos` form. Every convergence check, calibration residual and
 servo error built on this metric would have inherited that floor — about 20 µm
 at a 400 mm reach. `SO3.AngleToStaysAccurateForVerySmallAngles` pins it.
+
+**The frame graph is a tree, and lookups route through the lowest common
+ancestor.**
+A general graph lets a frame be reached by two paths, and the paths disagree by
+whatever the calibration residuals are — both defensible, neither more correct.
+One parent per frame makes the path unique, so the answer is unique, and forces
+that disagreement to be resolved once by someone who knows which measurement to
+trust. Cycles are then impossible by construction rather than by a check
+somebody has to remember to run. Routing through the ancestor rather than the
+root is *not* mainly about rounding: measured, that is 1.036e-15 against
+1.139e-15, which justifies nothing. It is that two tools on the same wrist are
+related by two edges, and going via the root composes twenty transforms down and
+twenty back up, which cancel algebraically but not in floating point. Under a
+20-deep spine the ancestor route returns the two-edge answer **exactly**; the
+root route is 4.9e-16 away from it, error imported from frames the answer has
+nothing to do with. Full argument in
+[ADR-0005](docs/adr/0005-frame-graph-is-a-tree.md).
+
+**Lookup does not allocate, and there is a test that proves it.**
+`kMaxFrameDepth` is fixed at 32 so both ancestor chains fit in `std::array` on
+the stack, which is what makes `lookup` callable from a control loop.
+`FrameGraphRealtime.LookupDoesNotAllocate` replaces every form of global
+`operator new` and asserts a zero delta across 1000 lookups — with
+`TheAllocationCounterItselfWorks` as a positive control, because a test that
+counts allocations proves nothing if the counter is inert. Failures come back as
+`Expected<T>` rather than exceptions: a lookup failing is ordinary — a sensor not
+yet calibrated — and `Disconnected` is deliberately a different answer from
+`UnknownFrame`.
 
 **Euler angles are an export format, never a representation.**
 `toRPY` recovers pitch via `atan2(-m₂₀, hypot(m₀₀, m₁₀))` rather than

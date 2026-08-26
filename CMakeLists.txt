@@ -41,7 +41,8 @@ target_compile_options(motionkit_warnings INTERFACE
 # --- core library ------------------------------------------------------------
 add_library(motionkit_core
   src/core/so3.cpp
-  src/core/se3.cpp)
+  src/core/se3.cpp
+  src/core/frame_graph.cpp)
 add_library(motionkit::core ALIAS motionkit_core)
 
 target_include_directories(motionkit_core

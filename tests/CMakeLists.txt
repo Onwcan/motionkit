@@ -13,7 +13,9 @@ include(GoogleTest)
 add_executable(motionkit_tests
   test_vec3.cpp
   test_so3.cpp
-  test_se3.cpp)
+  test_se3.cpp
+  test_frame_graph.cpp
+  test_frame_graph_realtime.cpp)
 target_link_libraries(motionkit_tests
   PRIVATE motionkit::core motionkit::warnings GTest::gtest_main)
 gtest_discover_tests(motionkit_tests
