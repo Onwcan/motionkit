@@ -140,6 +140,3 @@ cannot replay is a flake, not a test.
 ## Licence
 
 Apache-2.0.
-
-Built as portfolio work. Every design decision here is one I can defend in
-review — that was the point of building it rather than importing it.
