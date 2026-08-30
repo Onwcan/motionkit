@@ -13,6 +13,8 @@ else()
 endif()
 
 option(MOTIONKIT_BUILD_TESTS      "Build unit tests"           ${MOTIONKIT_IS_TOP_LEVEL})
+option(MOTIONKIT_BUILD_ALLOCATION_TESTS
+       "Build global-allocation probe tests"                   ON)
 option(MOTIONKIT_BUILD_BENCHMARKS "Build micro-benchmarks"     OFF)
 option(MOTIONKIT_ENABLE_WERROR    "Treat warnings as errors"   ON)
 
@@ -49,6 +51,7 @@ target_include_directories(motionkit_core
   PUBLIC
     $<BUILD_INTERFACE:${PROJECT_SOURCE_DIR}/include>
     $<INSTALL_INTERFACE:${CMAKE_INSTALL_INCLUDEDIR}>)
+target_compile_features(motionkit_core PUBLIC cxx_std_20)
 target_link_libraries(motionkit_core PRIVATE motionkit::warnings)
 set_target_properties(motionkit_core PROPERTIES
   OUTPUT_NAME motionkit-core

@@ -121,7 +121,9 @@ jobs:
       # downstream.
       - name: Build and install
         run: |
-          cmake -S . -B build -DCMAKE_BUILD_TYPE=Release -DCMAKE_INSTALL_PREFIX="$PWD/staged"
+          cmake -S . -B build -DCMAKE_BUILD_TYPE=Release \
+            -DMOTIONKIT_BUILD_TESTS=OFF \
+            -DCMAKE_INSTALL_PREFIX="$PWD/staged"
           cmake --build build -j "$(nproc)"
           cmake --install build
 
@@ -136,12 +138,26 @@ jobs:
           target_link_libraries(consumer PRIVATE motionkit::core)
           EOT
           cat > /tmp/consumer/main.cpp <<'EOT'
-          #include <cassert>
-          #include "motionkit/core/se3.hpp"
+          #include "motionkit/core/frame_graph.hpp"
           int main() {
             using namespace motionkit;
             const SE3 pose(SO3::rotZ(1.0), Vec3{1.0, 2.0, 3.0});
-            assert((pose.inverse() * pose).isApprox(SE3{}, 1e-12, 1e-12));
+            if (!(pose.inverse() * pose).isApprox(SE3{}, 1e-12, 1e-12)) {
+              return 1;
+            }
+            FrameGraph frames;
+            const auto base = frames.declareRoot("base");
+            if (!base) {
+              return 2;
+            }
+            const auto tcp = frames.declareFrame("tcp", base.value, pose);
+            if (!tcp) {
+              return 3;
+            }
+            const auto resolved = frames.lookup(base.value, tcp.value);
+            if (!resolved || !resolved.value.isApprox(pose, 1e-12, 1e-12)) {
+              return 4;
+            }
             return 0;
           }
           EOT

@@ -1,17 +1,22 @@
 // SPDX-License-Identifier: Apache-2.0
 #include "motionkit/core/se3.hpp"
 
+#include <array>
+
+#include "motionkit/core/so3.hpp"
+#include "motionkit/core/types.hpp"
+
 namespace motionkit {
 
 SE3 SE3::inverse() const noexcept {
   // The inverse of (R, t) is (R^-1, -R^-1 t). Building it in closed form keeps
   // the result exactly on the manifold; a general 4x4 inverse would not.
   const SO3 r_inv = r_.inverse();
-  return SE3(r_inv, -(r_inv * t_));
+  return {r_inv, -(r_inv * t_)};
 }
 
 SE3 SE3::operator*(const SE3& rhs) const noexcept {
-  return SE3(r_ * rhs.r_, t_ + (r_ * rhs.t_));
+  return {r_ * rhs.r_, t_ + (r_ * rhs.t_)};
 }
 
 Vec3 SE3::operator*(const Vec3& point) const noexcept { return (r_ * point) + t_; }

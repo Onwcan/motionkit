@@ -65,18 +65,18 @@ struct Vec3 {
     return *this;
   }
 
-  constexpr Scalar dot(const Vec3& o) const noexcept {
+  [[nodiscard]] constexpr Scalar dot(const Vec3& o) const noexcept {
     return x * o.x + y * o.y + z * o.z;
   }
-  constexpr Vec3 cross(const Vec3& o) const noexcept {
+  [[nodiscard]] constexpr Vec3 cross(const Vec3& o) const noexcept {
     return {y * o.z - z * o.y, z * o.x - x * o.z, x * o.y - y * o.x};
   }
-  constexpr Scalar squaredNorm() const noexcept { return dot(*this); }
-  Scalar norm() const noexcept { return std::sqrt(squaredNorm()); }
+  [[nodiscard]] constexpr Scalar squaredNorm() const noexcept { return dot(*this); }
+  [[nodiscard]] Scalar norm() const noexcept { return std::sqrt(squaredNorm()); }
 
   /// Throws if the vector is too close to zero to define a direction; callers
   /// that must not throw should test squaredNorm() first.
-  Vec3 normalized() const {
+  [[nodiscard]] Vec3 normalized() const {
     const Scalar n = norm();
     if (n < kAngleEpsilon) {
       throw std::domain_error("motionkit: cannot normalize a near-zero Vec3");
@@ -85,11 +85,19 @@ struct Vec3 {
   }
 
   constexpr Scalar operator[](std::size_t i) const {
-    return i == 0 ? x
-                  : (i == 1 ? y : (i == 2 ? z : throw std::out_of_range("Vec3 index")));
+    switch (i) {
+      case 0:
+        return x;
+      case 1:
+        return y;
+      case 2:
+        return z;
+      default:
+        throw std::out_of_range("Vec3 index");
+    }
   }
 
-  constexpr bool isApprox(const Vec3& o, Scalar tol) const noexcept {
+  [[nodiscard]] constexpr bool isApprox(const Vec3& o, Scalar tol) const noexcept {
     return (*this - o).squaredNorm() <= tol * tol;
   }
 };
@@ -124,14 +132,14 @@ struct Mat3 {
   constexpr Scalar& operator()(std::size_t r, std::size_t c) { return d[r * 3 + c]; }
   constexpr Scalar operator()(std::size_t r, std::size_t c) const { return d[r * 3 + c]; }
 
-  constexpr Vec3 column(std::size_t c) const {
+  [[nodiscard]] constexpr Vec3 column(std::size_t c) const {
     return {(*this)(0, c), (*this)(1, c), (*this)(2, c)};
   }
-  constexpr Vec3 row(std::size_t r) const {
+  [[nodiscard]] constexpr Vec3 row(std::size_t r) const {
     return {(*this)(r, 0), (*this)(r, 1), (*this)(r, 2)};
   }
 
-  constexpr Mat3 transpose() const noexcept {
+  [[nodiscard]] constexpr Mat3 transpose() const noexcept {
     Mat3 t;
     for (std::size_t r = 0; r < 3; ++r) {
       for (std::size_t c = 0; c < 3; ++c) {
@@ -160,18 +168,18 @@ struct Mat3 {
             d[6] * v.x + d[7] * v.y + d[8] * v.z};
   }
 
-  constexpr Scalar determinant() const noexcept {
+  [[nodiscard]] constexpr Scalar determinant() const noexcept {
     return d[0] * (d[4] * d[8] - d[5] * d[7]) - d[1] * (d[3] * d[8] - d[5] * d[6]) +
            d[2] * (d[3] * d[7] - d[4] * d[6]);
   }
 
-  constexpr Scalar trace() const noexcept { return d[0] + d[4] + d[8]; }
+  [[nodiscard]] constexpr Scalar trace() const noexcept { return d[0] + d[4] + d[8]; }
 
   /// True when the columns are orthonormal and right-handed, i.e. the matrix is
   /// a member of SO(3) to within `tol`.
-  bool isRotation(Scalar tol = kOrthoTolerance) const noexcept;
+  [[nodiscard]] bool isRotation(Scalar tol = kOrthoTolerance) const noexcept;
 
-  bool isApprox(const Mat3& o, Scalar tol) const noexcept;
+  [[nodiscard]] bool isApprox(const Mat3& o, Scalar tol) const noexcept;
 };
 
 }  // namespace motionkit

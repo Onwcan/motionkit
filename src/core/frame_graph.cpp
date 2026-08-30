@@ -2,6 +2,12 @@
 #include "motionkit/core/frame_graph.hpp"
 
 #include <array>
+#include <cstddef>
+#include <cstdint>
+#include <string>
+#include <string_view>
+
+#include "motionkit/core/se3.hpp"
 
 namespace motionkit {
 namespace {
@@ -9,8 +15,8 @@ namespace {
 /// One step of an ancestor walk: a frame, and the pose of the frame we started
 /// from expressed in it.
 struct ChainEntry {
-  FrameId frame{};
-  SE3 entry_T_start{};
+  FrameId frame;
+  SE3 entry_T_start;
 };
 
 using Chain = std::array<ChainEntry, kMaxFrameDepth>;

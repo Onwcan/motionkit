@@ -156,5 +156,21 @@ nothrow and sized forms pointing at the runtime's implementation, so memory
 obtained one way is released the other. AddressSanitizer catches it immediately —
 `alloc-dealloc-mismatch (operator new vs free)`, raised from inside GoogleTest's
 own `stable_sort`, which allocates a temporary buffer. All eight `new` forms and
-all twelve `delete` forms now route through `malloc`/`free` so the pairing holds
+all twelve `delete` forms now use matching allocation families (`malloc`/`free`,
+or `_aligned_malloc`/`_aligned_free` for aligned MSVC forms) so the pairing holds
 whichever form the standard library reaches for.
+
+Those replacements have executable-wide linkage, so the four allocation checks
+live in a dedicated test target rather than changing allocation for every unit
+test. The 73 ordinary tests remain in the main test executable.
+
+The allocation target is intentionally not built by the TSan preset. The Clang
+TSan runtime provides its own strong global allocation symbols, and linking a
+second set is a duplicate-symbol error before any test can run. TSan still covers
+the library and all 73 ordinary tests; only the incompatible instrumentation is
+excluded.
+
+GNU also diagnoses the deliberate custom `new`/`delete` plumbing as
+`-Wmismatched-new-delete`. That warning is suppressed only for the dedicated
+allocation target. It remains enabled, and promoted to an error, for the library
+and every ordinary test target.

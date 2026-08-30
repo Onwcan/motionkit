@@ -36,7 +36,8 @@ project weeks later, where it would have looked like the consumer's fault.
 
 CI runs an `install-consumer` job that:
 
-1. Builds and installs the package into a staging prefix.
+1. Configures with `MOTIONKIT_BUILD_TESTS=OFF`, then builds and installs the
+   package into a staging prefix.
 2. Generates a fresh, minimal CMake project that has never seen the source tree.
 3. Configures it with `CMAKE_PREFIX_PATH` pointing at the staging prefix, using
    only `find_package(motionkit REQUIRED)` and the public target name.
@@ -44,9 +45,23 @@ CI runs an `install-consumer` job that:
 
 Step 4 matters: a package can configure and link correctly and still ship
 headers that do not match the installed library.
+The consumer uses explicit failure return codes rather than `assert`, because
+the Release build disables assertions.
 
-The consumer source deliberately uses the exact snippet published in the
-README. If the README example stops working, CI fails.
+The consumer deliberately uses the public include and CMake target published in
+the README. If the documented `find_package` and link contract stops working,
+CI fails.
+
+The consumer does not set `CMAKE_CXX_STANDARD`, and it includes the frame-graph
+API whose defaulted comparison requires C++20. The installed `motionkit::core`
+target propagates its `cxx_std_20` requirement, so the package must put a
+downstream compiler into a compatible language mode itself.
+
+Disabling the repository tests is part of the boundary, not an optimisation.
+Top-level motionkit builds enable tests by default, which would fetch GoogleTest
+and compile test-only instrumentation before the installed package is exercised.
+Those checks belong to the build-and-test jobs. The install-consumer job should
+fail only when building, installing or consuming the package fails.
 
 ## Consequences
 
@@ -56,6 +71,8 @@ README. If the README example stops working, CI fails.
 - Header install coverage is checked implicitly — a header omitted from
   `install(DIRECTORY ...)` fails this job and nothing else.
 - The documented usage example cannot silently rot.
+- Test-only dependencies and instrumentation cannot make the package-consumer
+  gate fail before it reaches the installed artifact.
 
 **Negative**
 

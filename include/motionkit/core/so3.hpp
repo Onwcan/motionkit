@@ -45,34 +45,34 @@ class SO3 {
   static SO3 rotY(Scalar angle);
   static SO3 rotZ(Scalar angle);
 
-  constexpr Scalar w() const noexcept { return w_; }
-  constexpr Scalar x() const noexcept { return x_; }
-  constexpr Scalar y() const noexcept { return y_; }
-  constexpr Scalar z() const noexcept { return z_; }
+  [[nodiscard]] constexpr Scalar w() const noexcept { return w_; }
+  [[nodiscard]] constexpr Scalar x() const noexcept { return x_; }
+  [[nodiscard]] constexpr Scalar y() const noexcept { return y_; }
+  [[nodiscard]] constexpr Scalar z() const noexcept { return z_; }
 
-  Mat3 matrix() const noexcept;
+  [[nodiscard]] Mat3 matrix() const noexcept;
 
   /// Logarithmic map, inverse of fromRotationVector(). Magnitude lies in [0, pi].
-  Vec3 rotationVector() const noexcept;
+  [[nodiscard]] Vec3 rotationVector() const noexcept;
 
   /// Z-Y-X Tait-Bryan decomposition. At the pitch = +/-pi/2 singularity the
   /// roll/yaw split is not unique; this returns roll = 0 and folds the whole
   /// rotation into yaw.
   void toRPY(Scalar& roll, Scalar& pitch, Scalar& yaw) const noexcept;
 
-  SO3 inverse() const noexcept;
+  [[nodiscard]] SO3 inverse() const noexcept;
   SO3 operator*(const SO3& rhs) const noexcept;
   Vec3 operator*(const Vec3& v) const noexcept;
 
   /// Geodesic (constant angular velocity) interpolation, t in [0, 1], taking
   /// the shorter of the two arcs.
-  SO3 slerp(const SO3& other, Scalar t) const noexcept;
+  [[nodiscard]] SO3 slerp(const SO3& other, Scalar t) const noexcept;
 
   /// Angle of the relative rotation, in [0, pi].
-  Scalar angleTo(const SO3& other) const noexcept;
+  [[nodiscard]] Scalar angleTo(const SO3& other) const noexcept;
 
   /// True when both name the same rotation to within `tol` radians.
-  bool isApprox(const SO3& other, Scalar tol) const noexcept;
+  [[nodiscard]] bool isApprox(const SO3& other, Scalar tol) const noexcept;
 
  private:
   constexpr SO3(Scalar w, Scalar x, Scalar y, Scalar z) noexcept
@@ -80,6 +80,9 @@ class SO3 {
 
   /// Restores the unit-norm and w >= 0 invariants.
   void canonicalize();
+
+  /// Restores the invariants when `norm` is known to be nonzero.
+  void canonicalizeWithKnownNorm(Scalar norm) noexcept;
 
   Scalar w_{1.0};
   Scalar x_{0.0};

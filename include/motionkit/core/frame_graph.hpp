@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 #pragma once
 
+#include <cstddef>
 #include <cstdint>
 #include <string>
 #include <string_view>
@@ -49,7 +50,9 @@ struct Expected {
   FrameError error{FrameError::None};
 
   constexpr explicit operator bool() const noexcept { return error == FrameError::None; }
-  constexpr bool hasValue() const noexcept { return error == FrameError::None; }
+  [[nodiscard]] constexpr bool hasValue() const noexcept {
+    return error == FrameError::None;
+  }
 };
 
 /// Opaque handle to a frame in one FrameGraph.
@@ -61,15 +64,15 @@ class FrameId {
  public:
   constexpr FrameId() noexcept = default;
 
-  constexpr bool valid() const noexcept { return index_ != kInvalidIndex; }
+  [[nodiscard]] constexpr bool valid() const noexcept { return index_ != kInvalidIndex; }
   constexpr bool operator==(const FrameId& other) const noexcept = default;
 
   /// Index into the owning graph, for diagnostics only.
-  constexpr std::uint32_t index() const noexcept { return index_; }
+  [[nodiscard]] constexpr std::uint32_t index() const noexcept { return index_; }
 
  private:
   friend class FrameGraph;
-  static constexpr std::uint32_t kInvalidIndex = 0xFFFFFFFFu;
+  static constexpr std::uint32_t kInvalidIndex = 0xFFFFFFFFU;
 
   explicit constexpr FrameId(std::uint32_t index) noexcept : index_(index) {}
 
@@ -127,7 +130,7 @@ class FrameGraph {
   FrameError setTransform(FrameId frame, const SE3& parent_T_frame) noexcept;
 
   /// The transform from `frame` to its parent.
-  Expected<SE3> transformToParent(FrameId frame) const noexcept;
+  [[nodiscard]] Expected<SE3> transformToParent(FrameId frame) const noexcept;
 
   /// Returns `a_T_b`: the pose of frame `b` expressed in frame `a`.
   ///
@@ -151,33 +154,33 @@ class FrameGraph {
   /// and `FrameGraphRealtime.LowestCommonAncestorBeatsRoutingThroughTheRoot`.
   ///
   /// Allocation-free and non-throwing.
-  Expected<SE3> lookup(FrameId a, FrameId b) const noexcept;
+  [[nodiscard]] Expected<SE3> lookup(FrameId a, FrameId b) const noexcept;
 
   /// Finds a frame by name. Linear scan: intended for setup and diagnostics,
   /// not for the hot path. Resolve names to FrameIds once and keep the handles.
-  Expected<FrameId> find(std::string_view name) const noexcept;
+  [[nodiscard]] Expected<FrameId> find(std::string_view name) const noexcept;
 
   /// Name of a frame, or an empty view for an unknown handle.
-  std::string_view name(FrameId frame) const noexcept;
+  [[nodiscard]] std::string_view name(FrameId frame) const noexcept;
 
   /// Parent of `frame`, or an invalid FrameId if it is a root.
-  FrameId parent(FrameId frame) const noexcept;
+  [[nodiscard]] FrameId parent(FrameId frame) const noexcept;
 
   /// Number of ancestors between `frame` and its root; a root has depth 0.
-  Expected<std::uint32_t> depth(FrameId frame) const noexcept;
+  [[nodiscard]] Expected<std::uint32_t> depth(FrameId frame) const noexcept;
 
-  std::size_t size() const noexcept { return nodes_.size(); }
-  bool empty() const noexcept { return nodes_.empty(); }
+  [[nodiscard]] std::size_t size() const noexcept { return nodes_.size(); }
+  [[nodiscard]] bool empty() const noexcept { return nodes_.empty(); }
 
  private:
   struct Node {
     std::string name;
-    FrameId parent{};
-    SE3 parent_T_this{};
+    FrameId parent;
+    SE3 parent_T_this;
     std::uint32_t depth{0};
   };
 
-  bool isKnown(FrameId frame) const noexcept {
+  [[nodiscard]] bool isKnown(FrameId frame) const noexcept {
     return frame.valid() && frame.index_ < nodes_.size();
   }
 

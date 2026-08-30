@@ -49,7 +49,8 @@
       "cacheVariables": {
         "CMAKE_BUILD_TYPE": "Debug",
         "CMAKE_CXX_FLAGS": "-fsanitize=thread -fno-omit-frame-pointer",
-        "CMAKE_EXE_LINKER_FLAGS": "-fsanitize=thread"
+        "CMAKE_EXE_LINKER_FLAGS": "-fsanitize=thread",
+        "MOTIONKIT_BUILD_ALLOCATION_TESTS": "OFF"
       }
     },
     {

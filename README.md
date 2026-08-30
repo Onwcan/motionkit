@@ -24,8 +24,11 @@ Eigen, no KDL, no Pinocchio — the algorithms are the point.
 | WP-06 | Hand-eye, TCP and base-frame calibration | Planned |
 | WP-12 | CUDA batch IK and collision checking | Planned |
 
-77 tests, all passing, under GCC and Clang in Debug and Release, plus ASan,
-UBSan and TSan.
+77 tests, all passing under GCC and Clang in Debug and Release. ASan and UBSan
+exercise the full suite. TSan exercises the 73 ordinary tests; the four
+allocator-interposition tests run in a dedicated executable and are excluded
+from TSan because both the tests and the sanitizer runtime replace the global
+allocation functions.
 
 ---
 
@@ -40,7 +43,9 @@ cmake --build --preset debug
 ctest --preset debug
 ```
 
-Other presets: `release`, `asan`, `tsan`, `tidy`.
+Other presets: `release`, `asan`, `tsan`, `tidy`. The `tsan` preset intentionally
+runs 73 tests: the four tests that instrument global allocation are a test-harness
+incompatibility with TSan, not an exemption for production code.
 
 Before pushing, run the formatter -- CI enforces it:
 
@@ -162,11 +167,11 @@ test wrong.
 |---|---|
 | GCC + Clang × Debug + Release | `-Wconversion` and `-Wold-style-cast` fire on different constructs per compiler |
 | `-Werror` with `-Wconversion -Wsign-conversion -Wold-style-cast -Wshadow` | Silent narrowing in a pose pipeline is a field failure, not a warning |
-| ASan + UBSan, `-fno-sanitize-recover=all` | A UBSan finding fails the build rather than printing a note |
-| TSan | Ahead of the threaded executor in WP-08 |
+| ASan + UBSan on all 77 tests, `-fno-sanitize-recover=all` | A UBSan finding fails the build rather than printing a note |
+| TSan on the 73 ordinary tests | Ahead of the threaded executor in WP-08; the four allocator-interposition tests are excluded because TSan defines the same global allocation hooks |
 | clang-tidy, `--warnings-as-errors=*` | Rule set and exclusions justified in ADR-0002 |
-| clang-format `--dry-run --Werror` | Formatting is not a review topic |
-| **install + downstream consumer compile** | Caught a real bug on first run: the exported target was `motionkit::motionkit_core` while in-tree consumers used the `motionkit::core` alias. Every `find_package` downstream would have failed, and no unit test could have seen it |
+| `scripts/format.sh --check` with clang-format 18 | Formatting is not a review topic, and CI runs the same check developers run |
+| **install with repository tests off + downstream consumer compile and run** | Exercises only the installed package contract; it caught a real bug on first run when the exported target was `motionkit::motionkit_core` but consumers used `motionkit::core` |
 
 ---
 
@@ -175,6 +180,12 @@ test wrong.
 Unit tests assert known values; the interesting ones assert **properties** over
 thousands of uniformly sampled rotations from a fixed seed — a property test you
 cannot replay is a flake, not a test.
+
+Four allocation tests are instrumentation rather than ordinary unit tests. They
+run in their own executable because their global `operator new`/`operator delete`
+replacements affect an entire process. That target alone suppresses GNU's
+`-Wmismatched-new-delete` diagnostic: the `malloc`/`free` pairing is deliberate
+and is the mechanism being tested. The warning remains enabled everywhere else.
 
 - **Group axioms**: associativity, inverse, composition matching matrix product
 - **Invariants**: stored quaternion is always unit and canonical; `matrix()` is always in SO(3)

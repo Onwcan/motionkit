@@ -2,7 +2,12 @@
 #include "motionkit/core/so3.hpp"
 
 #include <algorithm>
+#include <cmath>
+#include <cstddef>
+#include <exception>
 #include <stdexcept>
+
+#include "motionkit/core/types.hpp"
 
 namespace motionkit {
 
@@ -35,7 +40,17 @@ void SO3::canonicalize() {
   if (n < kAngleEpsilon) {
     throw std::domain_error("motionkit: degenerate quaternion cannot be normalized");
   }
-  const Scalar inv = 1.0 / n;
+  canonicalizeWithKnownNorm(n);
+}
+
+void SO3::canonicalizeWithKnownNorm(Scalar norm) noexcept {
+  // Internal callers preserve the SO3 invariant, so reaching this branch is a
+  // programming error. Preserve the fail-fast behaviour of the previous
+  // throwing call from these noexcept paths without exposing an exception edge.
+  if (norm < kAngleEpsilon) {
+    std::terminate();
+  }
+  const Scalar inv = 1.0 / norm;
   w_ *= inv;
   x_ *= inv;
   y_ *= inv;
@@ -202,7 +217,7 @@ void SO3::toRPY(Scalar& roll, Scalar& pitch, Scalar& yaw) const noexcept {
 // ---------------------------------------------------------------------------
 SO3 SO3::inverse() const noexcept {
   // For a unit quaternion the inverse is the conjugate: no division needed.
-  return SO3(w_, -x_, -y_, -z_);
+  return {w_, -x_, -y_, -z_};
 }
 
 SO3 SO3::operator*(const SO3& rhs) const noexcept {
@@ -212,7 +227,9 @@ SO3 SO3::operator*(const SO3& rhs) const noexcept {
           w_ * rhs.z_ + x_ * rhs.y_ - y_ * rhs.x_ + z_ * rhs.w_);
   // Repeated products drift off the unit sphere. Renormalising here rather
   // than leaving it to the caller is what keeps a six-link chain exact.
-  out.canonicalize();
+  const Scalar norm =
+      std::sqrt(out.w_ * out.w_ + out.x_ * out.x_ + out.y_ * out.y_ + out.z_ * out.z_);
+  out.canonicalizeWithKnownNorm(norm);
   return out;
 }
 
@@ -250,8 +267,11 @@ SO3 SO3::slerp(const SO3& other, Scalar t) const noexcept {
     k0 = std::sin((1.0 - t) * theta) * inv_sin;
     k1 = std::sin(t * theta) * inv_sin;
   }
-  return fromQuaternion(k0 * w_ + k1 * ow, k0 * x_ + k1 * ox, k0 * y_ + k1 * oy,
-                        k0 * z_ + k1 * oz);
+  SO3 out(k0 * w_ + k1 * ow, k0 * x_ + k1 * ox, k0 * y_ + k1 * oy, k0 * z_ + k1 * oz);
+  const Scalar norm =
+      std::sqrt(out.w_ * out.w_ + out.x_ * out.x_ + out.y_ * out.y_ + out.z_ * out.z_);
+  out.canonicalizeWithKnownNorm(norm);
+  return out;
 }
 
 Scalar SO3::angleTo(const SO3& other) const noexcept {
