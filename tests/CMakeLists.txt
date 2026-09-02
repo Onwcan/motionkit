@@ -15,7 +15,8 @@ add_executable(motionkit_tests
   test_so3.cpp
   test_se3.cpp
   test_frame_graph.cpp
-  test_frame_graph_realtime.cpp)
+  test_frame_graph_realtime.cpp
+  test_trajectory.cpp)
 target_link_libraries(motionkit_tests
   PRIVATE motionkit::core motionkit::warnings GTest::gtest_main)
 gtest_discover_tests(motionkit_tests
@@ -24,7 +25,7 @@ gtest_discover_tests(motionkit_tests
 
 if(MOTIONKIT_BUILD_ALLOCATION_TESTS)
   add_executable(motionkit_allocation_tests
-    test_frame_graph_allocation.cpp)
+    test_no_allocation.cpp)
   target_link_libraries(motionkit_allocation_tests
     PRIVATE motionkit::core motionkit::warnings GTest::gtest_main)
 

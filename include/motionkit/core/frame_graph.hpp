@@ -7,6 +7,7 @@
 #include <string_view>
 #include <vector>
 
+#include "motionkit/core/expected.hpp"
 #include "motionkit/core/se3.hpp"
 #include "motionkit/core/types.hpp"
 
@@ -42,18 +43,6 @@ enum class FrameError : std::uint8_t {
 
 /// Human-readable form of a FrameError, for logs and test failures.
 std::string_view toString(FrameError error) noexcept;
-
-/// A value or the reason there isn't one.
-template <typename T>
-struct Expected {
-  T value{};
-  FrameError error{FrameError::None};
-
-  constexpr explicit operator bool() const noexcept { return error == FrameError::None; }
-  [[nodiscard]] constexpr bool hasValue() const noexcept {
-    return error == FrameError::None;
-  }
-};
 
 /// Opaque handle to a frame in one FrameGraph.
 ///
@@ -114,14 +103,14 @@ class FrameGraph {
   void reserve(std::size_t count);
 
   /// Creates a frame with no parent, the origin of its own tree.
-  Expected<FrameId> declareRoot(std::string_view name);
+  Expected<FrameId, FrameError> declareRoot(std::string_view name);
 
   /// Creates `name` as a child of `parent`, positioned by `parent_T_frame`.
   ///
   /// Read `parent_T_frame` as "the pose of the new frame expressed in the
   /// parent", matching the SE3 naming convention.
-  Expected<FrameId> declareFrame(std::string_view name, FrameId parent,
-                                 const SE3& parent_T_frame);
+  Expected<FrameId, FrameError> declareFrame(std::string_view name, FrameId parent,
+                                             const SE3& parent_T_frame);
 
   /// Updates the transform from `frame` to its parent -- a joint moving.
   ///
@@ -130,7 +119,7 @@ class FrameGraph {
   FrameError setTransform(FrameId frame, const SE3& parent_T_frame) noexcept;
 
   /// The transform from `frame` to its parent.
-  [[nodiscard]] Expected<SE3> transformToParent(FrameId frame) const noexcept;
+  [[nodiscard]] Expected<SE3, FrameError> transformToParent(FrameId frame) const noexcept;
 
   /// Returns `a_T_b`: the pose of frame `b` expressed in frame `a`.
   ///
@@ -154,11 +143,11 @@ class FrameGraph {
   /// and `FrameGraphRealtime.LowestCommonAncestorBeatsRoutingThroughTheRoot`.
   ///
   /// Allocation-free and non-throwing.
-  [[nodiscard]] Expected<SE3> lookup(FrameId a, FrameId b) const noexcept;
+  [[nodiscard]] Expected<SE3, FrameError> lookup(FrameId a, FrameId b) const noexcept;
 
   /// Finds a frame by name. Linear scan: intended for setup and diagnostics,
   /// not for the hot path. Resolve names to FrameIds once and keep the handles.
-  [[nodiscard]] Expected<FrameId> find(std::string_view name) const noexcept;
+  [[nodiscard]] Expected<FrameId, FrameError> find(std::string_view name) const noexcept;
 
   /// Name of a frame, or an empty view for an unknown handle.
   [[nodiscard]] std::string_view name(FrameId frame) const noexcept;
@@ -167,7 +156,7 @@ class FrameGraph {
   [[nodiscard]] FrameId parent(FrameId frame) const noexcept;
 
   /// Number of ancestors between `frame` and its root; a root has depth 0.
-  [[nodiscard]] Expected<std::uint32_t> depth(FrameId frame) const noexcept;
+  [[nodiscard]] Expected<std::uint32_t, FrameError> depth(FrameId frame) const noexcept;
 
   [[nodiscard]] std::size_t size() const noexcept { return nodes_.size(); }
   [[nodiscard]] bool empty() const noexcept { return nodes_.empty(); }

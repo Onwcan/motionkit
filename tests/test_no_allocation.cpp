@@ -1,11 +1,13 @@
 // SPDX-License-Identifier: Apache-2.0
 //
-// Proves that the FrameGraph hot path does not allocate by replacing every
-// global new/delete form in this executable. This must remain a separate test
-// binary: ThreadSanitizer provides its own replacements for the same symbols.
+// Proves that the hot paths of this library do not allocate, by replacing every
+// global new/delete form in this executable and counting. This must remain a
+// separate test binary: ThreadSanitizer provides its own replacements for the
+// same symbols, and two sets cannot both win.
 
 #include <gtest/gtest.h>
 
+#include <array>
 #include <atomic>
 #include <cstddef>
 #include <cstdint>
@@ -19,6 +21,7 @@
 #endif
 
 #include "motionkit/core/frame_graph.hpp"
+#include "motionkit/core/trajectory.hpp"
 
 namespace {
 
@@ -231,6 +234,67 @@ TEST(FrameGraphRealtime, FindAllocatesNothingEither) {
   DeepTree tree = buildDeepTree(6, 3);
   const std::size_t allocations =
       allocationsDuring([&] { (void)tree.graph.find("left2"); });
+  EXPECT_EQ(allocations, 0u);
+}
+
+// ---------------------------------------------------------------------------
+// Trajectories
+// ---------------------------------------------------------------------------
+
+constexpr MotionLimits kAxis{2.0, 8.0, 40.0};
+
+TEST(TrajectoryRealtime, ProfileSamplingDoesNotAllocate) {
+  const auto profile = ScurveProfile::plan(0.0, 2.0, kAxis);
+  ASSERT_TRUE(profile.hasValue());
+
+  Scalar accumulator = 0.0;
+  const std::size_t allocations = allocationsDuring([&] {
+    for (int i = 0; i < 1000; ++i) {
+      const Scalar t = profile.value.duration() * static_cast<Scalar>(i) / 1000.0;
+      accumulator += profile.value.sample(t).position;
+    }
+  });
+  EXPECT_NE(accumulator, 12345.6789);  // keep the loop alive
+  EXPECT_EQ(allocations, 0u);
+}
+
+TEST(TrajectoryRealtime, SynchronizedSamplingDoesNotAllocate) {
+  const std::array<Scalar, 3> start{0.0, 0.0, 0.5};
+  const std::array<Scalar, 3> goal{1.0, 0.2, -0.4};
+  const std::array<MotionLimits, 3> limits{kAxis, kAxis, kAxis};
+  const auto trajectory = SynchronizedTrajectory::plan(start, goal, limits);
+  ASSERT_TRUE(trajectory.hasValue());
+
+  // Caller-provided storage, which is the whole reason sample() takes a span
+  // rather than returning a container.
+  std::array<MotionSample, 3> out{};
+  const std::size_t allocations = allocationsDuring([&] {
+    for (int i = 0; i < 1000; ++i) {
+      const Scalar t = trajectory.value.duration() * static_cast<Scalar>(i) / 1000.0;
+      (void)trajectory.value.sample(t, out);
+    }
+  });
+  EXPECT_EQ(allocations, 0u);
+}
+
+// Planning is normally setup work, so this is a stronger claim than it looks:
+// it is what makes a mid-move re-plan -- a feed-rate override, a new goal --
+// something the cyclic task can do itself rather than hand to another thread.
+TEST(TrajectoryRealtime, PlanningDoesNotAllocateEither) {
+  const std::array<Scalar, 3> start{0.0, 0.0, 0.5};
+  const std::array<Scalar, 3> goal{1.0, 0.2, -0.4};
+  const std::array<MotionLimits, 3> limits{kAxis, kAxis, kAxis};
+
+  const std::size_t allocations = allocationsDuring([&] {
+    for (int i = 0; i < 200; ++i) {
+      const Scalar override_factor = 0.5 + 0.002 * static_cast<Scalar>(i);
+      const std::array<MotionLimits, 3> scaled{limits[0].scaled(override_factor),
+                                               limits[1].scaled(override_factor),
+                                               limits[2].scaled(override_factor)};
+      const auto planned = SynchronizedTrajectory::plan(start, goal, scaled);
+      ASSERT_TRUE(planned.hasValue());
+    }
+  });
   EXPECT_EQ(allocations, 0u);
 }
 

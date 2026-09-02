@@ -1,0 +1,6 @@
+# Line endings are normalised to LF in the working tree, not only in the object
+# store. Without this, a Windows checkout with core.autocrlf=true gets CRLF
+# files, and `scripts/format.sh` -- whose shebang then reads `/usr/bin/env
+# bash\r` -- cannot be run at all from WSL or Git Bash. CI never sees it,
+# because CI checks out on Linux.
+* text=auto eol=lf

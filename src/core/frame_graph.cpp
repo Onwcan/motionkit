@@ -7,6 +7,7 @@
 #include <string>
 #include <string_view>
 
+#include "motionkit/core/expected.hpp"
 #include "motionkit/core/se3.hpp"
 
 namespace motionkit {
@@ -41,7 +42,7 @@ std::string_view toString(FrameError error) noexcept {
 
 void FrameGraph::reserve(std::size_t count) { nodes_.reserve(count); }
 
-Expected<FrameId> FrameGraph::declareRoot(std::string_view name) {
+Expected<FrameId, FrameError> FrameGraph::declareRoot(std::string_view name) {
   if (find(name)) {
     return {FrameId{}, FrameError::DuplicateName};
   }
@@ -50,8 +51,9 @@ Expected<FrameId> FrameGraph::declareRoot(std::string_view name) {
   return {FrameId{index}, FrameError::None};
 }
 
-Expected<FrameId> FrameGraph::declareFrame(std::string_view name, FrameId parent,
-                                           const SE3& parent_T_frame) {
+Expected<FrameId, FrameError> FrameGraph::declareFrame(std::string_view name,
+                                                       FrameId parent,
+                                                       const SE3& parent_T_frame) {
   if (!isKnown(parent)) {
     return {FrameId{}, FrameError::UnknownFrame};
   }
@@ -82,7 +84,7 @@ FrameError FrameGraph::setTransform(FrameId frame, const SE3& parent_T_frame) no
   return FrameError::None;
 }
 
-Expected<SE3> FrameGraph::transformToParent(FrameId frame) const noexcept {
+Expected<SE3, FrameError> FrameGraph::transformToParent(FrameId frame) const noexcept {
   if (!isKnown(frame)) {
     return {SE3{}, FrameError::UnknownFrame};
   }
@@ -92,7 +94,7 @@ Expected<SE3> FrameGraph::transformToParent(FrameId frame) const noexcept {
   return {nodes_[frame.index_].parent_T_this, FrameError::None};
 }
 
-Expected<SE3> FrameGraph::lookup(FrameId a, FrameId b) const noexcept {
+Expected<SE3, FrameError> FrameGraph::lookup(FrameId a, FrameId b) const noexcept {
   if (!isKnown(a) || !isKnown(b)) {
     return {SE3{}, FrameError::UnknownFrame};
   }
@@ -150,7 +152,7 @@ Expected<SE3> FrameGraph::lookup(FrameId a, FrameId b) const noexcept {
   return {SE3{}, FrameError::Disconnected};
 }
 
-Expected<FrameId> FrameGraph::find(std::string_view name) const noexcept {
+Expected<FrameId, FrameError> FrameGraph::find(std::string_view name) const noexcept {
   for (std::size_t i = 0; i < nodes_.size(); ++i) {
     if (nodes_[i].name == name) {
       return {FrameId{static_cast<std::uint32_t>(i)}, FrameError::None};
@@ -173,7 +175,7 @@ FrameId FrameGraph::parent(FrameId frame) const noexcept {
   return nodes_[frame.index_].parent;
 }
 
-Expected<std::uint32_t> FrameGraph::depth(FrameId frame) const noexcept {
+Expected<std::uint32_t, FrameError> FrameGraph::depth(FrameId frame) const noexcept {
   if (!isKnown(frame)) {
     return {0, FrameError::UnknownFrame};
   }

@@ -23,7 +23,7 @@ SE3 pose(Scalar roll, Scalar pitch, Scalar yaw, Scalar x, Scalar y, Scalar z) {
 
 /// Unwraps an Expected, failing the test rather than returning a default.
 template <typename T>
-T mustHave(const Expected<T>& result) {
+T mustHave(const Expected<T, FrameError>& result) {
   EXPECT_EQ(result.error, FrameError::None) << toString(result.error);
   return result.value;
 }
