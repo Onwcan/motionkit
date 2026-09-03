@@ -9,6 +9,7 @@
 #include <string_view>
 
 #include "motionkit/core/expected.hpp"
+#include "motionkit/core/motion_state.hpp"
 #include "motionkit/core/types.hpp"
 
 namespace motionkit {
@@ -24,6 +25,19 @@ namespace {
 /// the move is long.
 Scalar positiveQuadraticRoot(Scalar b, Scalar k) noexcept {
   return 2.0 * k / (b + std::sqrt(b * b + 4.0 * k));
+}
+
+/// The jerk that drives acceleration from `from` towards `to`, or zero when
+/// they already agree. Spelled out rather than written as nested conditionals,
+/// which is where a sign error in a braking profile would hide best.
+Scalar jerkToward(Scalar from, Scalar to, Scalar j_max) noexcept {
+  if (to > from) {
+    return j_max;
+  }
+  if (to < from) {
+    return -j_max;
+  }
+  return 0.0;
 }
 
 }  // namespace
@@ -185,23 +199,8 @@ Expected<ScurveProfile, TrajectoryError> ScurveProfile::plan(Scalar start, Scala
   const std::array<Scalar, kPhaseCount> jerks{j_max,  0.0, -j_max, 0.0,
                                               -j_max, 0.0, j_max};
 
-  Scalar t = 0.0;
-  Scalar p = 0.0;
-  Scalar v = 0.0;
-  Scalar a = 0.0;
-  for (std::size_t i = 0; i < kPhaseCount; ++i) {
-    profile.phases_[i] = Phase{t, durations[i], jerks[i], p, v, a};
-    const Scalar d = durations[i];
-    const Scalar j = jerks[i];
-    // Order matters: each line consumes the entry values that the lines below
-    // it are about to overwrite.
-    p += v * d + 0.5 * a * d * d + (1.0 / 6.0) * j * d * d * d;
-    v += a * d + 0.5 * j * d * d;
-    a += j * d;
-    t += d;
-  }
-
-  profile.duration_ = t;
+  profile.segments_.build(durations, jerks, /*v0=*/0.0, /*a0=*/0.0);
+  profile.duration_ = profile.segments_.duration();
   profile.peak_velocity_ = peak_velocity;
   profile.peak_acceleration_ = peak_acceleration;
   return {profile, TrajectoryError::None};
@@ -210,7 +209,7 @@ Expected<ScurveProfile, TrajectoryError> ScurveProfile::plan(Scalar start, Scala
 MotionSample ScurveProfile::sample(Scalar t) const noexcept {
   MotionSample out;
   // Written as !(t > 0) rather than t <= 0 so that a NaN time parks at the
-  // start instead of falling through to the phase scan and producing NaN
+  // start instead of falling through to the segment scan and producing NaN
   // setpoints for the servo.
   if (!(t > 0.0)) {
     out.position = start_;
@@ -221,43 +220,154 @@ MotionSample ScurveProfile::sample(Scalar t) const noexcept {
     return out;
   }
 
-  // The last non-empty phase that begins at or before t is the one containing
-  // it: phases tile [0, duration_) in order, and any later phase starts at or
-  // after this one ends. No early exit, so the cost does not depend on where in
-  // the profile the sample falls.
-  std::size_t index = 0;
-  for (std::size_t i = 0; i < kPhaseCount; ++i) {
-    if (phases_[i].duration > 0.0 && t >= phases_[i].t0) {
-      index = i;
-    }
-  }
-
-  const Phase& phase = phases_[index];
-  const Scalar dt = t - phase.t0;
-  const Scalar a = phase.a0 + phase.jerk * dt;
-  const Scalar v = phase.v0 + phase.a0 * dt + 0.5 * phase.jerk * dt * dt;
-  const Scalar p = phase.p0 + phase.v0 * dt + 0.5 * phase.a0 * dt * dt +
-                   (1.0 / 6.0) * phase.jerk * dt * dt * dt;
-
-  out.position = start_ + direction_ * p;
-  out.velocity = direction_ * v;
-  out.acceleration = direction_ * a;
-  out.jerk = direction_ * phase.jerk;
+  // The run is built on the magnitude of the displacement; it is mirrored here
+  // so there is one construction rather than two.
+  const MotionSample relative = segments_.sampleInterior(t);
+  out.position = start_ + direction_ * relative.position;
+  out.velocity = direction_ * relative.velocity;
+  out.acceleration = direction_ * relative.acceleration;
+  out.jerk = direction_ * relative.jerk;
   return out;
 }
 
 std::array<Scalar, kPhaseCount> ScurveProfile::phaseDurations() const noexcept {
   std::array<Scalar, kPhaseCount> out{};
   for (std::size_t i = 0; i < kPhaseCount; ++i) {
-    out[i] = phases_[i].duration;
+    out[i] = segments_.segmentDuration(i);
   }
   return out;
 }
 
-bool ScurveProfile::hasCruisePhase() const noexcept { return phases_[3].duration > 0.0; }
+bool ScurveProfile::hasCruisePhase() const noexcept {
+  return segments_.segmentDuration(3) > 0.0;
+}
 
 bool ScurveProfile::hasAccelerationPlateau() const noexcept {
-  return phases_[1].duration > 0.0;
+  return segments_.segmentDuration(1) > 0.0;
+}
+
+// ---------------------------------------------------------------------------
+// StopProfile
+// ---------------------------------------------------------------------------
+
+Expected<StopProfile, TrajectoryError> StopProfile::plan(const MotionState& from,
+                                                         const MotionLimits& limits) {
+  if (!std::isfinite(from.position) || !std::isfinite(from.velocity) ||
+      !std::isfinite(from.acceleration)) {
+    return {StopProfile{}, TrajectoryError::NonFiniteInput};
+  }
+  if (const TrajectoryError error = limits.validate(); error != TrajectoryError::None) {
+    return {StopProfile{}, error};
+  }
+
+  const Scalar a_max = limits.max_acceleration;
+  const Scalar j_max = limits.max_jerk;
+  const Scalar v0 = from.velocity;
+  const Scalar a0 = from.acceleration;
+
+  StopProfile stop;
+  stop.start_ = from;
+  stop.started_outside_limit_ = std::fabs(a0) > a_max;
+
+  // The speed the axis will still carry once acceleration has been brought back
+  // to zero. Acceleration cannot be changed instantaneously, so this much of
+  // the motion is already committed however hard the brake is applied, and its
+  // sign decides the whole shape of the stop: positive means the axis is still
+  // running forward and has to be braked, negative means the axis is braking so
+  // hard that it would reverse, and settling at rest means easing off instead.
+  const Scalar committed_velocity = v0 + a0 * std::fabs(a0) / (2.0 * j_max);
+
+  Scalar a_peak = 0.0;
+  Scalar hold_duration = 0.0;
+  if (committed_velocity > 0.0) {
+    // Solving v(T) == 0 with a(T) == 0 for the two-ramp shape gives
+    // a_peak^2 == j * v0 + a0^2 / 2. The max() is for rounding only: the
+    // argument is positive whenever committed_velocity is.
+    const Scalar square = std::max(j_max * v0 + 0.5 * a0 * a0, 0.0);
+    a_peak = -std::sqrt(square);
+    if (a_peak < -a_max) {
+      a_peak = -a_max;
+      hold_duration = (square - a_max * a_max) / (j_max * a_max);
+    }
+  } else if (committed_velocity < 0.0) {
+    // The mirror image: the axis would overshoot backwards, so the profile
+    // pushes forward to arrive at rest rather than past it.
+    const Scalar square = std::max(0.5 * a0 * a0 - j_max * v0, 0.0);
+    a_peak = std::sqrt(square);
+    if (a_peak > a_max) {
+      a_peak = a_max;
+      hold_duration = (square - a_max * a_max) / (j_max * a_max);
+    }
+  }
+  // committed_velocity == 0 leaves a_peak at zero: the axis is already on the
+  // trajectory that brings it to rest, and all that remains is to unwind the
+  // acceleration it has.
+
+  const Scalar first_jerk = jerkToward(a0, a_peak, j_max);
+  const Scalar last_jerk = jerkToward(a_peak, 0.0, j_max);
+  const std::array<Scalar, kStopPhaseCount> durations{std::fabs(a_peak - a0) / j_max,
+                                                      std::max(hold_duration, 0.0),
+                                                      std::fabs(a_peak) / j_max};
+  const std::array<Scalar, kStopPhaseCount> jerks{first_jerk, 0.0, last_jerk};
+
+  stop.segments_.build(durations, jerks, v0, a0);
+  stop.duration_ = stop.segments_.duration();
+  stop.rest_position_ = from.position + stop.segments_.terminal().position;
+  stop.initial_jerk_ = first_jerk;
+  stop.peak_acceleration_ = std::max(std::fabs(a0), std::fabs(a_peak));
+  // Velocity is extremal either at the start or where acceleration crosses
+  // zero, and the value at that crossing is exactly committed_velocity.
+  stop.peak_speed_ = std::max(std::fabs(v0), std::fabs(committed_velocity));
+  return {stop, TrajectoryError::None};
+}
+
+MotionSample StopProfile::sample(Scalar t) const noexcept {
+  // !(t > 0) rather than t <= 0, so a NaN time reports the state handed in
+  // instead of falling through and producing NaN setpoints.
+  if (!(t > 0.0)) {
+    return MotionSample{start_.position, start_.velocity, start_.acceleration,
+                        initial_jerk_};
+  }
+  if (t >= duration_) {
+    return MotionSample{rest_position_, 0.0, 0.0, 0.0};
+  }
+  const MotionSample relative = segments_.sampleInterior(t);
+  return MotionSample{start_.position + relative.position, relative.velocity,
+                      relative.acceleration, relative.jerk};
+}
+
+Expected<Scalar, TrajectoryError> maximumSafeSpeed(Scalar available_distance,
+                                                   const MotionLimits& limits) {
+  if (!std::isfinite(available_distance)) {
+    return {0.0, TrajectoryError::NonFiniteInput};
+  }
+  if (const TrajectoryError error = limits.validate(); error != TrajectoryError::None) {
+    return {0.0, error};
+  }
+  if (available_distance <= 0.0) {
+    // No room to stop in permits no speed. Not an error -- a guard flush
+    // against the hazard is a legitimate thing to describe, and zero is the
+    // correct answer for it.
+    return {0.0, TrajectoryError::None};
+  }
+
+  const Scalar a_max = limits.max_acceleration;
+  const Scalar j_max = limits.max_jerk;
+  // Below this distance the stop is over before the acceleration limit is
+  // reached, so the jerk limit alone decides it. Grouped to stay in range.
+  const Scalar plateau_distance_threshold = (a_max / j_max) * (a_max / j_max) * a_max;
+
+  Scalar speed = 0.0;
+  if (available_distance < plateau_distance_threshold) {
+    // distance == v^(3/2) / sqrt(j)
+    speed = std::cbrt(available_distance * available_distance * j_max);
+  } else {
+    // distance == v * a / (2j) + v^2 / (2a), i.e.
+    // v^2 + v * (a^2 / j) - 2 * distance * a == 0.
+    speed =
+        positiveQuadraticRoot((a_max / j_max) * a_max, 2.0 * available_distance * a_max);
+  }
+  return {std::min(speed, limits.max_velocity), TrajectoryError::None};
 }
 
 // ---------------------------------------------------------------------------

@@ -21,12 +21,13 @@ Eigen, no KDL, no Pinocchio — the algorithms are the point.
 | WP-03 | Forward and inverse kinematics (6R) | Planned |
 | WP-04 | Rigid-body dynamics (RNEA, CRBA) | Planned |
 | WP-05 | Trajectory planning (jerk-limited S-curve, multi-axis synchronisation) | **Done** |
+| WP-11 | Stopping from an arbitrary state, and the safety envelope it defines | **Done** |
 | WP-06 | Hand-eye, TCP and base-frame calibration | Planned |
-| WP-11 | Blending, TOPP, and planning from a non-zero initial state | Planned |
+| WP-12 | Blending and TOPP (needs a position target from a non-zero state) | Planned |
 | WP-12 | CUDA batch IK and collision checking | Planned |
 
-108 tests, all passing under GCC and Clang in Debug and Release. ASan and UBSan
-exercise the full suite. TSan exercises the 101 ordinary tests; the seven
+125 tests, all passing under GCC and Clang in Debug and Release. ASan and UBSan
+exercise the full suite. TSan exercises the 116 ordinary tests; the nine
 allocator-interposition tests run in a dedicated executable and are excluded
 from TSan because both the tests and the sanitizer runtime replace the global
 allocation functions.
@@ -45,7 +46,7 @@ ctest --preset debug
 ```
 
 Other presets: `release`, `asan`, `tsan`, `tidy`. The `tsan` preset intentionally
-runs 101 tests: the seven tests that instrument global allocation are a
+runs 116 tests: the nine tests that instrument global allocation are a
 test-harness incompatibility with TSan, not an exemption for production code.
 
 Before pushing, run the formatter -- CI enforces it:
@@ -118,6 +119,20 @@ std::array<MotionSample, 6> setpoints{};
 move.value.sample(elapsed_seconds, setpoints);
 ```
 
+Stopping is planned from wherever the axis happens to be, which is the case
+that decides how far back a guard has to sit:
+
+```cpp
+// How fast may this axis run, given 300 mm of clearance to the hazard?
+const auto permitted = maximumSafeSpeed(0.300, limits);
+
+// And when the stop is called for mid-move, from the state it is actually in.
+const MotionState now = setpoints[0].state();
+const auto stop = StopProfile::plan(now, limits);
+log("stopping in {} mm, peaking at {} m/s",
+    stop.value.stoppingDistance() * 1000.0, stop.value.peakSpeed());
+```
+
 ---
 
 ## Design decisions worth arguing about
@@ -180,6 +195,29 @@ back 1.1e-16. Whichever axis binds each limit runs exactly at it, which is what
 time-optimal means once the path is fixed. See
 [ADR-0006](docs/adr/0006-jerk-limited-profiles-and-a-single-path-parameter.md).
 
+**A speed reading is not a stopping distance.** Two axes both reading 1.5 m/s
+stop in **290 mm** and **967 mm** — a factor of 3.3 — because one of them is
+still accelerating at 8 m/s². Acceleration cannot be changed instantaneously,
+so that axis has already committed to 2.3 m/s it does not yet have. Any safety
+envelope computed from velocity alone is wrong for every axis that is not
+already at constant speed, which during a move is most of them.
+
+**And `v²/(2a)` is optimistic by exactly `v·a/(2j)`.** That is the trapezoidal
+stopping distance; the jerk-limited one is `v·a/(2j) + v²/(2a)`, because the
+time spent building and releasing the braking force is time spent travelling.
+At 2 m/s with `a = 8 m/s²` and `j = 40 m/s³` the formula says **250 mm**, the
+real stop is **450 mm**, and a guard positioned from the formula sits 200 mm
+inside the hazard. `maximumSafeSpeed()` inverts the real one; it returns zero
+when there is no room, because the absence of room is not permission to move.
+See [ADR-0007](docs/adr/0007-stopping-is-planned-to-zero-acceleration.md).
+
+**"Stop" means zero acceleration, not zero velocity.** An axis at +0.05 m/s
+decelerating at −8 m/s² reaches zero velocity almost at once, and unwinding that
+acceleration takes 0.2 s regardless, so it carries on into reverse — measured,
+to −0.75 m/s, settling 199 mm *behind* where it started. So `stoppingDistance()`
+can oppose the initial velocity, and a planner that targeted velocity alone
+would hand back a stop that does not stay stopped.
+
 **Sample a trajectory; do not integrate it.** Forward Euler at 1 kHz lags the
 commanded position by half a step of velocity — 1.0 mm on a 2 m/s move. Then,
 because a rest-to-rest profile accelerates and decelerates by equal amounts, the
@@ -215,8 +253,8 @@ test wrong.
 |---|---|
 | GCC + Clang × Debug + Release | `-Wconversion` and `-Wold-style-cast` fire on different constructs per compiler |
 | `-Werror` with `-Wconversion -Wsign-conversion -Wold-style-cast -Wshadow` | Silent narrowing in a pose pipeline is a field failure, not a warning |
-| ASan + UBSan on all 108 tests, `-fno-sanitize-recover=all` | A UBSan finding fails the build rather than printing a note |
-| TSan on the 101 ordinary tests | Ahead of the threaded executor in WP-08; the seven allocator-interposition tests are excluded because TSan defines the same global allocation hooks |
+| ASan + UBSan on all 125 tests, `-fno-sanitize-recover=all` | A UBSan finding fails the build rather than printing a note |
+| TSan on the 116 ordinary tests | Ahead of the threaded executor in WP-08; the nine allocator-interposition tests are excluded because TSan defines the same global allocation hooks |
 | clang-tidy, `--warnings-as-errors=*` | Rule set and exclusions justified in ADR-0002 |
 | `scripts/format.sh --check` with clang-format 18 | Formatting is not a review topic, and CI runs the same check developers run |
 | **install with repository tests off + downstream consumer compile and run** | Exercises only the installed package contract; it caught a real bug on first run when the exported target was `motionkit::motionkit_core` but consumers used `motionkit::core` |
@@ -229,7 +267,7 @@ Unit tests assert known values; the interesting ones assert **properties** over
 thousands of uniformly sampled rotations from a fixed seed — a property test you
 cannot replay is a flake, not a test.
 
-Seven allocation tests are instrumentation rather than ordinary unit tests. They
+Nine allocation tests are instrumentation rather than ordinary unit tests. They
 run in their own executable because their global `operator new`/`operator delete`
 replacements affect an entire process. That target alone suppresses GNU's
 `-Wmismatched-new-delete` diagnostic: the `malloc`/`free` pairing is deliberate
@@ -263,17 +301,20 @@ no real-time scheduling:
 
 | Operation | min | median | max | of a 1 kHz cycle |
 |---|---|---|---|---|
-| `SO3` composition | 46.1 | 46.3 | 95.3 | 0.005 % |
-| `FrameGraph::lookup`, tool to camera | 250.2 | 251.8 | 311.5 | 0.025 % |
-| `ScurveProfile::sample` | 4.0 | 4.4 | 11.7 | 0.0004 % |
-| `SynchronizedTrajectory::sample`, 6 axes | 8.2 | 8.6 | 15.1 | 0.001 % |
-| `SynchronizedTrajectory::plan`, 6 axes | 82.8 | 86.2 | 119.0 | 0.009 % |
+| `SO3` composition | 46.3 | 46.5 | 92.0 | 0.005 % |
+| `FrameGraph::lookup`, tool to camera | 250.3 | 250.8 | 646.7 | 0.025 % |
+| `ScurveProfile::sample` | 4.0 | 4.1 | 12.1 | 0.0004 % |
+| `SynchronizedTrajectory::sample`, 6 axes | 8.6 | 8.8 | 14.8 | 0.001 % |
+| `SynchronizedTrajectory::plan`, 6 axes | 86.6 | 91.8 | 339.5 | 0.009 % |
+| `StopProfile::plan` | 17.4 | 17.5 | 25.7 | 0.002 % |
+| `maximumSafeSpeed` | 4.6 | 4.8 | 11.3 | 0.0005 % |
 
 The maximum column is dominated by whatever else the machine was doing, and is
 reported anyway: a control loop is sized by its worst cycle, not its median.
-The last row is the interesting one — planning a six-axis move costs less than a
-`FrameGraph` lookup, so a mid-move re-plan on a feed-rate override is something
-the cyclic task can do itself rather than hand to another thread.
+Planning a six-axis move costs less than a `FrameGraph` lookup, and planning a
+stop costs a fifth of that, so both a mid-move re-plan on a feed-rate override
+and a stop decided by the safety task are things those tasks can do themselves
+rather than hand to a thread they do not control.
 
 ---
 

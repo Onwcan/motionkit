@@ -7,7 +7,9 @@
 #include <span>
 #include <string_view>
 
+#include "motionkit/core/detail/jerk_segments.hpp"
 #include "motionkit/core/expected.hpp"
+#include "motionkit/core/motion_state.hpp"
 #include "motionkit/core/types.hpp"
 
 namespace motionkit {
@@ -71,14 +73,6 @@ struct MotionLimits {
   /// Note that this is not the same as stretching a planned profile in time: it
   /// re-plans against smaller ceilings, so the shape changes too.
   [[nodiscard]] MotionLimits scaled(Scalar factor) const noexcept;
-};
-
-/// The state of one axis at one instant.
-struct MotionSample {
-  Scalar position{0.0};
-  Scalar velocity{0.0};
-  Scalar acceleration{0.0};
-  Scalar jerk{0.0};
 };
 
 /// A time-optimal rest-to-rest move along one axis, limited in velocity,
@@ -159,21 +153,7 @@ class ScurveProfile {
   [[nodiscard]] bool hasAccelerationPlateau() const noexcept;
 
  private:
-  /// One constant-jerk segment, with the state it starts from.
-  ///
-  /// Storing the entry state rather than re-integrating from t = 0 keeps
-  /// sample() at a handful of flops, and stops rounding from accumulating
-  /// across segment boundaries on every call.
-  struct Phase {
-    Scalar t0{0.0};        ///< start time, seconds from the beginning
-    Scalar duration{0.0};  ///< can be zero; such a phase is never selected
-    Scalar jerk{0.0};      ///< constant across the phase
-    Scalar p0{0.0};        ///< distance travelled at t0, never negative
-    Scalar v0{0.0};
-    Scalar a0{0.0};
-  };
-
-  std::array<Phase, kPhaseCount> phases_{};
+  detail::JerkSegments<kPhaseCount> segments_{};
   Scalar duration_{0.0};
   Scalar start_{0.0};
   Scalar goal_{0.0};
@@ -183,6 +163,94 @@ class ScurveProfile {
   Scalar peak_velocity_{0.0};
   Scalar peak_acceleration_{0.0};
 };
+
+/// Segments in a stop: ramp acceleration to the braking level, hold it there,
+/// ramp back to zero as the axis arrives at rest.
+inline constexpr std::size_t kStopPhaseCount = 3;
+
+/// The fastest stop from an arbitrary state that respects the acceleration and
+/// jerk limits.
+///
+/// Unlike ScurveProfile this takes a moving, accelerating axis: it is the half
+/// of the non-zero-initial-state problem that has a closed form. There is no
+/// position target -- the axis stops where the limits let it, and where that is
+/// is the question worth asking.
+///
+/// limits.max_velocity is not consulted. A stop cannot be made safer by
+/// refusing to start one, and the axis is already travelling at whatever speed
+/// it is travelling at; peakSpeed() reports the speed actually reached, which
+/// can exceed max_velocity when the axis was still accelerating when the stop
+/// was called for.
+///
+/// A state whose acceleration already exceeds the limit is planned, not
+/// refused, and startedOutsideAccelerationLimit() says so. Declining to stop a
+/// machine on the grounds that it is already misbehaving has the logic exactly
+/// backwards.
+class StopProfile {
+ public:
+  constexpr StopProfile() noexcept = default;
+
+  static Expected<StopProfile, TrajectoryError> plan(const MotionState& from,
+                                                     const MotionLimits& limits);
+
+  [[nodiscard]] constexpr Scalar duration() const noexcept { return duration_; }
+
+  /// State at `t`. Before the stop begins this is the state handed in, with the
+  /// jerk the stop is about to command; at or after duration() the axis is at
+  /// rest, exactly.
+  [[nodiscard]] MotionSample sample(Scalar t) const noexcept;
+
+  /// Signed travel between the starting position and rest. Negative for an axis
+  /// moving in the negative direction; it can also have the opposite sign to
+  /// the initial velocity, when a large opposing acceleration reverses the axis
+  /// before it settles.
+  [[nodiscard]] constexpr Scalar stoppingDistance() const noexcept {
+    return rest_position_ - start_.position;
+  }
+
+  [[nodiscard]] constexpr Scalar restPosition() const noexcept { return rest_position_; }
+
+  /// Largest speed reached during the stop. Equal to the initial speed when the
+  /// axis was already slowing, and larger when it was not: acceleration cannot
+  /// be changed instantaneously, so some further speed is already committed.
+  [[nodiscard]] constexpr Scalar peakSpeed() const noexcept { return peak_speed_; }
+
+  /// Largest absolute acceleration during the stop, including the initial value
+  /// when that already exceeded the limit.
+  [[nodiscard]] constexpr Scalar peakAcceleration() const noexcept {
+    return peak_acceleration_;
+  }
+
+  [[nodiscard]] constexpr bool startedOutsideAccelerationLimit() const noexcept {
+    return started_outside_limit_;
+  }
+
+ private:
+  detail::JerkSegments<kStopPhaseCount> segments_{};
+  MotionState start_{};
+  Scalar duration_{0.0};
+  Scalar rest_position_{0.0};
+  Scalar peak_speed_{0.0};
+  Scalar peak_acceleration_{0.0};
+  Scalar initial_jerk_{0.0};
+  bool started_outside_limit_{false};
+};
+
+/// The highest speed at which an axis running at constant velocity may travel
+/// and still be brought to rest within `available_distance`.
+///
+/// This is the number that sizes a guard: how far past a light curtain the tool
+/// can still travel, and therefore how far back the curtain has to be. The
+/// answer is never more than limits.max_velocity -- a speed the axis cannot
+/// reach is not a useful permission -- and is zero when there is no room, which
+/// is the honest reading of no room.
+///
+/// The familiar `v^2 / (2a)` is the answer for a trapezoidal stop, and it is
+/// optimistic here by exactly `v * a_max / (2 * j_max)`: the time spent building
+/// the braking force is time spent travelling. See
+/// StopSafetyEnvelope.TrapezoidalFormulaUnderstatesTheStoppingDistance.
+Expected<Scalar, TrajectoryError> maximumSafeSpeed(Scalar available_distance,
+                                                   const MotionLimits& limits);
 
 /// A multi-axis move in which every axis starts and stops at the same instant
 /// and the machine travels a straight line in joint space.

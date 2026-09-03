@@ -148,6 +148,17 @@ int main() {
            g_sink = SynchronizedTrajectory::plan(start, goal, scaled).value.duration();
          }));
 
+  report("StopProfile::plan", measure([&](std::size_t i) {
+           const Scalar velocity = 0.002 * static_cast<Scalar>(i % 1000);
+           g_sink = StopProfile::plan(MotionState{0.0, velocity, 4.0}, axis)
+                        .value.stoppingDistance();
+         }));
+
+  report("maximumSafeSpeed", measure([&](std::size_t i) {
+           const Scalar room = 0.001 + 0.001 * static_cast<Scalar>(i % 1000);
+           g_sink = maximumSafeSpeed(room, axis).value;
+         }));
+
   std::printf(
       "\n  Timings come from an ordinary desktop with no isolated cores and no\n"
       "  real-time scheduling, so the maximum column is dominated by whatever\n"

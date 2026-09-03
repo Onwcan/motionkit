@@ -298,5 +298,35 @@ TEST(TrajectoryRealtime, PlanningDoesNotAllocateEither) {
   EXPECT_EQ(allocations, 0u);
 }
 
+// A stop is planned by whatever notices that the machine has to stop, which may
+// well be the safety task itself. Allocating there would make the stop depend
+// on the allocator being in a good mood.
+TEST(TrajectoryRealtime, PlanningAStopDoesNotAllocate) {
+  const std::size_t allocations = allocationsDuring([&] {
+    for (int i = 0; i < 500; ++i) {
+      const Scalar velocity = 0.004 * static_cast<Scalar>(i);
+      const auto stop =
+          StopProfile::plan(MotionState{0.0, velocity, 8.0 - 0.03 * velocity}, kAxis);
+      ASSERT_TRUE(stop.hasValue());
+    }
+  });
+  EXPECT_EQ(allocations, 0u);
+}
+
+TEST(TrajectoryRealtime, SamplingAStopDoesNotAllocate) {
+  const auto stop = StopProfile::plan(MotionState{0.0, 2.0, 4.0}, kAxis);
+  ASSERT_TRUE(stop.hasValue());
+
+  Scalar accumulator = 0.0;
+  const std::size_t allocations = allocationsDuring([&] {
+    for (int i = 0; i < 1000; ++i) {
+      const Scalar t = stop.value.duration() * static_cast<Scalar>(i) / 1000.0;
+      accumulator += stop.value.sample(t).position;
+    }
+  });
+  EXPECT_NE(accumulator, 12345.6789);  // keep the loop alive
+  EXPECT_EQ(allocations, 0u);
+}
+
 }  // namespace
 }  // namespace motionkit

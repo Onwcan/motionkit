@@ -203,6 +203,17 @@ jobs:
             if (std::abs(setpoints[1].position - 0.25) > 1e-12) {
               return 7;
             }
+            // A free function rather than a member, so it exercises a different
+            // part of the exported symbol set.
+            const auto permitted = maximumSafeSpeed(0.3, limits[0]);
+            if (!permitted || permitted.value <= 0.0) {
+              return 8;
+            }
+            const auto stop =
+                StopProfile::plan(MotionState{0.0, permitted.value, 0.0}, limits[0]);
+            if (!stop || std::abs(stop.value.stoppingDistance() - 0.3) > 1e-9) {
+              return 9;
+            }
             return 0;
           }
           EOT
