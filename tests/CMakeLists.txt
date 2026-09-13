@@ -10,6 +10,12 @@ FetchContent_MakeAvailable(googletest)
 
 include(GoogleTest)
 
+add_test(NAME readme_limits
+  COMMAND ${CMAKE_COMMAND}
+    -DPROJECT_SOURCE_DIR=${PROJECT_SOURCE_DIR}
+    -P ${CMAKE_CURRENT_SOURCE_DIR}/check_readme_limits.cmake)
+set_tests_properties(readme_limits PROPERTIES LABELS unit)
+
 add_executable(motionkit_tests
   test_vec3.cpp
   test_so3.cpp
